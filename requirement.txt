@@ -1,0 +1,10 @@
+Flask
+flask-mysql
+mysql-connector-python
+flask-jwt-extended
+flask-cors
+dotenv
+face-recognition
+opencv-python
+numpy
+werkzeug
