@@ -1,9 +1,10 @@
 import os
-import cv2
 import numpy as np
 import bcrypt
 import face_recognition
-from flask import Flask, request, jsonify, send_from_directory
+import json
+import time
+from flask import Flask, request, jsonify
 import mysql.connector
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from flask_cors import CORS
@@ -20,7 +21,7 @@ CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, allow_
 app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your_secret_key')  # Better to use env variable
 app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST', 'localhost')
 app.config['MYSQL_USER'] = os.getenv('MYSQL_USER', 'root')
-app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD', '24A39r98')
+app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD', 'root')
 app.config['MYSQL_DB'] = os.getenv('MYSQL_DB', 'face_detect')
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
@@ -84,34 +85,47 @@ def generate_face_id(image_path):
 # ---------------- Employee CRUD ----------------
 @app.route('/employee', methods=['POST'])
 def create_employee():
-    if 'profile_image' not in request.files:
+    print("[EMPLOYEE] Creating new employee...")
+
+    if 'file' not in request.files:
         return jsonify({"message": "No image uploaded"}), 400
 
-    file = request.files['profile_image']
-    first_name = request.form.get('first_name')
-    last_name = request.form.get('last_name')
-    dob = request.form.get('dob')
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"message": "No selected file"}), 400
 
-    if not all([first_name, last_name, dob]):
+    # Extract form data
+    first_name = request.form.get('firstName')
+    last_name = request.form.get('lastName')
+    role = request.form.get('role')
+
+    if not all([first_name, last_name, role]):
         return jsonify({"message": "Missing required fields"}), 400
 
     filename = secure_filename(file.filename)
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    ext = os.path.splitext(filename)[1]
+    timestamp = int(time.time())
+    unique_filename = f"{os.path.splitext(filename)[0]}_{timestamp}{ext}"
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
     file.save(file_path)
 
     face_id = generate_face_id(file_path)
     if not face_id:
-        os.remove(file_path)  # Clean up the saved file
-        return jsonify({"message": "No face detected"}), 400
+        os.remove(file_path)
+        return jsonify({"message": "No face detected in uploaded image"}), 400
 
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
     try:
         cursor.execute(
-            "INSERT INTO employees (first_name, last_name, dob, profile_image, face_id) VALUES (%s, %s, %s, %s, %s)",
-            (first_name, last_name, dob, file_path, str(face_id)))
+            "INSERT INTO employees (first_name, last_name, role, profile_image, face_id) VALUES (%s, %s, %s, %s, %s)",
+            (first_name, last_name, role, file_path, json.dumps(face_id))
+        )
         db.commit()
         employee_id = cursor.lastrowid
+
+        print(f"[EMPLOYEE] Created employee {first_name} {last_name} (ID: {employee_id})")
+
         return jsonify({
             "message": "Employee added successfully",
             "id": employee_id,
@@ -119,6 +133,7 @@ def create_employee():
         }), 201
     except Exception as e:
         db.rollback()
+        print(f"[EMPLOYEE] Error inserting employee: {str(e)}")
         return jsonify({"message": f"Error creating employee: {str(e)}"}), 500
     finally:
         cursor.close()
@@ -240,8 +255,54 @@ def create_activity():
         db.close()
 
 @app.route('/activity/sync', methods=['POST'])
-def sync_activity():  # Changed function name to avoid conflict
-    return create_activity()  # Reuse the same logic
+# @jwt_required()
+def sync_activity():
+    data = request.json
+    activities = data.get('activities', [])
+
+    if not isinstance(activities, list):
+        return jsonify({"message": "Invalid payload"}), 400
+
+    db = get_db_connection()
+    cursor = db.cursor(dictionary=True)
+    report_cursor = db.cursor()
+
+    for activity in activities:
+        try:
+            employee_id = activity.get('employee_id')
+            machine_id = activity.get('machine_id')
+            status = activity.get('status')
+            timestamp = activity.get('created_at')  # Optional
+
+            if not all([employee_id, machine_id, status]):
+                continue
+
+            if timestamp:
+                cursor.execute(
+                    "INSERT INTO activities (employee_id, machine_id, status, created_at, updated_at) VALUES (%s, %s, %s, %s, NOW())",
+                    (employee_id, machine_id, status, timestamp)
+                )
+            else:
+                cursor.execute(
+                    "INSERT INTO activities (employee_id, machine_id, status, created_at, updated_at) VALUES (%s, %s, %s, NOW(), NOW())",
+                    (employee_id, machine_id, status)
+                )
+        except Exception as e:
+            try:
+                report_cursor.execute(
+                    "INSERT INTO report (endpoint, input, exception) VALUES (%s, %s, %s)",
+                    ('/activity/sync', json.dumps(activity), str(e))
+                )
+                db.commit()
+            except:
+                pass  # Avoid blocking if logging to report also fails
+
+    db.commit()
+    cursor.close()
+    report_cursor.close()
+
+    return jsonify({"message": "Activities synced with fallback logging.", "count": len(activities)}), 201
+
 
 @app.route('/activity', methods=['GET'])
 def get_all_activities():  # Changed function name to avoid conflict

@@ -1,10 +1,11 @@
-Flask
-flask-mysql
-mysql-connector-python
-flask-jwt-extended
+flask
 flask-cors
-dotenv
+flask-jwt-extended
+bcrypt
+python-dotenv
 face-recognition
 opencv-python
 numpy
-werkzeug
+Pillow
+requests
+mysql-connector-python
