@@ -39,7 +39,7 @@ def get_db_connection():
 # Ensure the upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-@app.route("/health", methods=['GET'])
+@app.route("/api/health", methods=['GET'])
 def health():
     return jsonify({"message": "Health check"}), 200
 
@@ -47,6 +47,7 @@ def health():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
+    
     if not data:
         return jsonify({"message": "No data provided"}), 400
         
@@ -83,7 +84,7 @@ def generate_face_id(image_path):
         return None
 
 # ---------------- Employee CRUD ----------------
-@app.route('/employee', methods=['POST'])
+@app.route('/api/employee', methods=['POST'])
 def create_employee():
     print("[EMPLOYEE] Creating new employee...")
 
@@ -139,7 +140,7 @@ def create_employee():
         cursor.close()
         db.close()
 
-@app.route('/employee', methods=['GET'])
+@app.route('/api/employee', methods=['GET'])
 def get_employees():
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
@@ -184,7 +185,7 @@ def get_employee(id):
         cursor.close()
         db.close()
 
-@app.route('/employee/<int:id>', methods=['PUT'])
+@app.route('/api/employee/<int:id>', methods=['PUT'])
 def update_employee(id):
     data = request.get_json()
     if not data:
@@ -211,7 +212,7 @@ def update_employee(id):
         cursor.close()
         db.close()
 
-@app.route('/employee/<int:id>', methods=['DELETE'])
+@app.route('/api/employee/<int:id>', methods=['DELETE'])
 def delete_employee(id):
     db = get_db_connection()
     cursor = db.cursor()
@@ -229,7 +230,7 @@ def delete_employee(id):
         db.close()
 
 # ---------------- Employee Activity CRUD ----------------
-@app.route('/activity', methods=['POST'])
+@app.route('/api/activity', methods=['POST'])
 def create_activity():
     data = request.get_json()
     if not data:
@@ -254,7 +255,7 @@ def create_activity():
         cursor.close()
         db.close()
 
-@app.route('/activity/sync', methods=['POST'])
+@app.route('/api/activity/sync', methods=['POST'])
 # @jwt_required()
 def sync_activity():
     data = request.json
@@ -304,16 +305,17 @@ def sync_activity():
     return jsonify({"message": "Activities synced with fallback logging.", "count": len(activities)}), 201
 
 
-@app.route('/activity', methods=['GET'])
+@app.route('/api/activity', methods=['GET'])
 def get_all_activities():  # Changed function name to avoid conflict
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT * FROM activities")
+        cursor.execute("SELECT a.id, a.machine_id, a.status, a.created_at, e.first_name, e.last_name FROM activities a LEFT JOIN employees e ON a.employee_id = e.id ORDER BY a.created_at DESC")
         activities = cursor.fetchall()
         return jsonify([{
             "id": act["id"],
-            "employee_id": act["employee_id"],
+            "employee_name": act["first_name"] + " " + act["last_name"] if act["first_name"] else "-",
+            "machine_id": act["machine_id"],
             "status": act["status"],
             "created_at": act["created_at"].isoformat() if act["created_at"] else None
         } for act in activities]), 200
@@ -323,7 +325,7 @@ def get_all_activities():  # Changed function name to avoid conflict
         cursor.close()
         db.close()
 
-@app.route('/activity/<int:empId>', methods=['GET'])
+@app.route('/api/activity/<int:empId>', methods=['GET'])
 def get_employee_activities(empId):  # Changed function name to avoid conflict
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
