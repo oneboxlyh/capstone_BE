@@ -23,7 +23,6 @@ app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST', 'localhost')
 app.config['MYSQL_USER'] = os.getenv('MYSQL_USER', 'root')
 app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD', 'root')
 app.config['MYSQL_DB'] = os.getenv('MYSQL_DB', 'face_detect')
-app.config['SERVER_URL'] = os.getenv('SERVER_URL', 'http://127.0.0.1:5000/')
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
 jwt = JWTManager(app)
@@ -127,7 +126,7 @@ def create_employee():
     try:
         cursor.execute(
             "INSERT INTO employees (first_name, last_name, role, profile_image, face_id) VALUES (%s, %s, %s, %s, %s)",
-            (first_name, last_name, role, app.config["SERVER_URL"] + file_path, json.dumps(face_id))
+            (first_name, last_name, role, "/" + file_path, json.dumps(face_id))
         )
         db.commit()
         employee_id = cursor.lastrowid
@@ -237,7 +236,7 @@ def update_employee(id):
     try:
         cursor.execute(
             "UPDATE employees SET first_name=%s, last_name=%s, role=%s, profile_image=%s, face_id=%s WHERE id=%s",
-            (first_name, last_name, role, app.config["SERVER_URL"] + profile_image, face_id, id)
+            (first_name, last_name, role, "/" + profile_image, face_id, id)
         )
         db.commit()
 
