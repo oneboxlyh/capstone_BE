@@ -4,10 +4,10 @@ import bcrypt
 import face_recognition
 import json
 import time
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import mysql.connector
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-from flask_cors import CORS
+from flask_jwt_extended import JWTManager, create_access_token
+from flask_cors import CORS, cross_origin
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
@@ -23,6 +23,7 @@ app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST', 'localhost')
 app.config['MYSQL_USER'] = os.getenv('MYSQL_USER', 'root')
 app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD', 'root')
 app.config['MYSQL_DB'] = os.getenv('MYSQL_DB', 'face_detect')
+app.config['SERVER_URL'] = os.getenv('SERVER_URL', 'http://127.0.0.1:5000/')
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
 jwt = JWTManager(app)
@@ -42,6 +43,12 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 @app.route("/api/health", methods=['GET'])
 def health():
     return jsonify({"message": "Health check"}), 200
+
+@app.route('/uploads/<path:filename>')
+@cross_origin()  # Allow all origins — you can restrict this if needed
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 
 # ---------------- Authentication ----------------
 @app.route('/api/login', methods=['POST'])
@@ -120,7 +127,7 @@ def create_employee():
     try:
         cursor.execute(
             "INSERT INTO employees (first_name, last_name, role, profile_image, face_id) VALUES (%s, %s, %s, %s, %s)",
-            (first_name, last_name, role, file_path, json.dumps(face_id))
+            (first_name, last_name, role, app.config["SERVER_URL"] + file_path, json.dumps(face_id))
         )
         db.commit()
         employee_id = cursor.lastrowid
@@ -161,7 +168,7 @@ def get_employees():
         cursor.close()
         db.close()
 
-@app.route('/employee/<int:id>', methods=['GET'])
+@app.route('/api/employee/<int:id>', methods=['GET'])
 def get_employee(id):
     db = get_db_connection()
     cursor = db.cursor(dictionary=True)
@@ -176,8 +183,7 @@ def get_employee(id):
             "firstName": employee["first_name"],
             "lastName": employee["last_name"],
             "role": employee.get("role"),
-            "profileImage": employee.get("profile_image"),
-            "faceId": employee.get("face_id")
+            "profileImage": employee.get("profile_image")
         }), 200
     except Exception as e:
         return jsonify({"message": f"Error fetching employee: {str(e)}"}), 500
@@ -187,26 +193,59 @@ def get_employee(id):
 
 @app.route('/api/employee/<int:id>', methods=['PUT'])
 def update_employee(id):
-    data = request.get_json()
-    if not data:
-        return jsonify({"message": "No data provided"}), 400
-
-    required_fields = ['first_name', 'last_name', 'dob']
-    if not all(field in data for field in required_fields):
-        return jsonify({"message": "Missing required fields"}), 400
+    print(f"[EMPLOYEE] Updating employee ID: {id}")
 
     db = get_db_connection()
-    cursor = db.cursor()
+    cursor = db.cursor(dictionary=True)
+
+    # Handle form data and file
+    first_name = request.form.get('firstName')
+    last_name = request.form.get('lastName')
+    role = request.form.get('role')
+    file = request.files.get('file')
+
+    if not all([first_name, last_name, role]):
+        return jsonify({"message": "Missing required fields"}), 400
+
+    # Fetch existing employee to retain current image if no new file provided
+    cursor.execute("SELECT * FROM employees WHERE id=%s", (id,))
+    employee = cursor.fetchone()
+
+    if not employee:
+        return jsonify({"message": "Employee not found"}), 404
+
+    profile_image = employee['profile_image']
+    face_id = employee['face_id']
+
+    # If a new file is uploaded, update the image and regenerate face_id
+    if file and file.filename != '':
+        filename = secure_filename(file.filename)
+        ext = os.path.splitext(filename)[1]
+        timestamp = int(time.time())
+        unique_filename = f"{os.path.splitext(filename)[0]}_{timestamp}{ext}"
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+        file.save(file_path)
+
+        new_face_id = generate_face_id(file_path)
+        if not new_face_id:
+            os.remove(file_path)
+            return jsonify({"message": "No face detected in uploaded image"}), 400
+
+        profile_image = file_path
+        face_id = json.dumps(new_face_id)
+
     try:
         cursor.execute(
-            "UPDATE employees SET first_name=%s, last_name=%s, dob=%s WHERE id=%s",
-            (data['first_name'], data['last_name'], data['dob'], id))
+            "UPDATE employees SET first_name=%s, last_name=%s, role=%s, profile_image=%s, face_id=%s WHERE id=%s",
+            (first_name, last_name, role, app.config["SERVER_URL"] + profile_image, face_id, id)
+        )
         db.commit()
-        if cursor.rowcount == 0:
-            return jsonify({"message": "Employee not found"}), 404
+
+        print(f"[EMPLOYEE] Updated employee {first_name} {last_name} (ID: {id})")
         return jsonify({"message": "Employee updated successfully"}), 200
     except Exception as e:
         db.rollback()
+        print(f"[EMPLOYEE] Error updating employee: {str(e)}")
         return jsonify({"message": f"Error updating employee: {str(e)}"}), 500
     finally:
         cursor.close()
