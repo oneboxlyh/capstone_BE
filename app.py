@@ -178,18 +178,38 @@ def get_employee(id):
         if not employee:
             return jsonify({"error": "Employee not found"}), 404
         
+        # Fetch attendance records for this employee
+        cursor.execute("""
+            SELECT a.id, a.status, a.created_at, m.description 
+            FROM activities a
+            LEFT JOIN machines m ON a.machine_id = m.id
+            WHERE a.employee_id = %s 
+            ORDER BY a.created_at DESC
+        """, (id,))
+        attendance = cursor.fetchall()
+        
         return jsonify({
             "id": employee["id"],
             "firstName": employee["first_name"],
             "lastName": employee["last_name"],
             "role": employee.get("role"),
-            "profileImage": employee.get("profile_image")
+            "profileImage": employee.get("profile_image"),
+            "attendance": [
+                {
+                    "id": record["id"],
+                    "machine": record["description"],
+                    "status": record["status"],
+                    "timestamp": record["created_at"].strftime("%Y-%m-%d %H:%M:%S") if record["created_at"] else None
+                }
+                for record in attendance
+            ]
         }), 200
     except Exception as e:
         return jsonify({"message": f"Error fetching employee: {str(e)}"}), 500
     finally:
         cursor.close()
         db.close()
+
 
 @app.route('/api/employee/<int:id>', methods=['PUT'])
 def update_employee(id):
