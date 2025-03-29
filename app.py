@@ -168,6 +168,35 @@ def get_employees():
         cursor.close()
         db.close()
 
+@app.route('/api/dashboard', methods=['GET'])
+def get_dashboard_summary():
+    db = get_db_connection()
+    cursor = db.cursor(dictionary=True)
+    try:
+        # Get total attendance count
+        cursor.execute("SELECT COUNT(*) AS total_attendance FROM activities")
+        total_attendance = cursor.fetchone()["total_attendance"]
+
+        # Get total employee count
+        cursor.execute("SELECT COUNT(*) AS total_employees FROM employees")
+        total_employees = cursor.fetchone()["total_employees"]
+
+        # Get total machine count
+        cursor.execute("SELECT COUNT(*) AS total_machines FROM machines")
+        total_machines = cursor.fetchone()["total_machines"]
+
+        return jsonify({
+            "totalAttendance": total_attendance,
+            "totalEmployees": total_employees,
+            "totalMachines": total_machines
+        }), 200
+
+    except Exception as e:
+        return jsonify({"message": f"Error fetching dashboard summary: {str(e)}"}), 500
+    finally:
+        cursor.close()
+        db.close()
+
 @app.route('/api/employee/<int:id>', methods=['GET'])
 def get_employee(id):
     db = get_db_connection()
