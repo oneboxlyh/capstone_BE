@@ -432,6 +432,104 @@ def get_employee_activities(empId):  # Changed function name to avoid conflict
         cursor.close()
         db.close()
 
+# ---------------- Machine CRUD ----------------
+
+@app.route('/api/machine', methods=['POST'])
+def create_machine():
+    data = request.get_json()
+    description = data.get('description')
+    location = data.get('location')
+    
+    db = get_db_connection()
+    cursor = db.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO machines (description, location) VALUES (%s, %s)",
+            (description, location)
+        )
+        db.commit()
+        return jsonify({"message": "Machine created"}), 201
+    except Exception as e:
+        db.rollback()
+        return jsonify({"message": f"Error creating machine: {str(e)}"}), 500
+    finally:
+        cursor.close()
+        db.close()
+
+@app.route('/api/machine', methods=['GET'])
+def get_machines():
+    db = get_db_connection()
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM machines ORDER BY created_at DESC")
+        machines = cursor.fetchall()
+        return jsonify(machines), 200
+    except Exception as e:
+        return jsonify({"message": f"Error fetching machines: {str(e)}"}), 500
+    finally:
+        cursor.close()
+        db.close()
+        
+@app.route('/api/machine/<int:id>', methods=['GET'])
+def get_machine(id):
+    db = get_db_connection()
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM machines WHERE id = %s", (id,))
+        machine = cursor.fetchone()
+
+        if not machine:
+            return jsonify({"message": "Machine not found"}), 404
+
+        return jsonify(machine), 200
+    except Exception as e:
+        return jsonify({"message": f"Error fetching machine: {str(e)}"}), 500
+    finally:
+        cursor.close()
+        db.close()
+
+
+@app.route('/api/machine/<int:id>', methods=['PUT'])
+def update_machine(id):
+    data = request.get_json()
+    description = data.get('description')
+    location = data.get('location')
+
+    db = get_db_connection()
+    cursor = db.cursor()
+    try:
+        cursor.execute(
+            "UPDATE machines SET description=%s, location=%s WHERE id=%s",
+            (description, location, id)
+        )
+        db.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"message": "Machine not found"}), 404
+        return jsonify({"message": "Machine updated successfully"}), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"message": f"Error updating machine: {str(e)}"}), 500
+    finally:
+        cursor.close()
+        db.close()
+
+@app.route('/api/machine/<int:id>', methods=['DELETE'])
+def delete_machine(id):
+    db = get_db_connection()
+    cursor = db.cursor()
+    try:
+        cursor.execute("DELETE FROM machines WHERE id=%s", (id,))
+        db.commit()
+        if cursor.rowcount == 0:
+            return jsonify({"message": "Machine not found"}), 404
+        return jsonify({"message": "Machine deleted successfully"}), 200
+    except Exception as e:
+        db.rollback()
+        return jsonify({"message": f"Error deleting machine: {str(e)}"}), 500
+    finally:
+        cursor.close()
+        db.close()
+        
 # ---------------- Start Server ----------------
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
